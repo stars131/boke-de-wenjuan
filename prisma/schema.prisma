@@ -1,0 +1,110 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model SurveyResponse {
+  id                         String        @id @default(cuid())
+  createdAt                  DateTime      @default(now())
+  updatedAt                  DateTime      @updatedAt
+  anonymousSessionId         String?
+  identityStatus             String
+  currentStates              String[]
+  contentPlatforms           String[]
+  preferredFormats           String[]
+  selectedTopics             String[]
+  topPriorityTopic           String
+  privateButWantToHearTopic  String?
+  privateButWantToHearReason String?       @db.Text
+  personalStory              String?       @db.Text
+  storyRelatedTopic          String?
+  storyUsagePreference       String?
+  storyEmotionIntensity      Int?
+  participationWillingness   String[]
+  contactInfoEncrypted       String?
+  contactInfoHash            String?
+  nickname                   String?
+  additionalSuggestions      String?       @db.Text
+  source                     String?
+  referrer                   String?
+  ipHash                     String?
+  userAgentHash              String?
+  topicRatings               TopicRating[]
+  review                     StoryReview?
+
+  @@index([createdAt])
+  @@index([anonymousSessionId])
+  @@index([topPriorityTopic])
+  @@index([storyRelatedTopic])
+  @@index([contactInfoHash])
+}
+
+model TopicRating {
+  id              String         @id @default(cuid())
+  responseId      String
+  response        SurveyResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  topicId         String
+  interestScore   Int
+  resonanceScore  Int
+  discussionScore Int
+
+  @@unique([responseId, topicId])
+  @@index([topicId])
+}
+
+model StoryReview {
+  id               String         @id @default(cuid())
+  responseId       String         @unique
+  response         SurveyResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  status           String         @default("new")
+  tags             String[]
+  isHighValue      Boolean        @default(false)
+  isPotentialGuest Boolean        @default(false)
+  riskLevel        String         @default("normal")
+  note             String?        @db.Text
+  reviewedAt       DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([status])
+  @@index([isHighValue])
+  @@index([isPotentialGuest])
+}
+
+model GuestSurveyResponse {
+  id                     String   @id @default(cuid())
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  anonymousSessionId     String?
+  guestName              String?
+  guestIdentity          String
+  organization           String?
+  relationshipToTopics   String[]
+  selectedTopics         String[]
+  customTopics           String?  @db.Text
+  strongestTopic         String
+  talkAngles             String[]
+  keyStory               String?  @db.Text
+  questionsWantToDiscuss String?  @db.Text
+  boundaries             String?  @db.Text
+  sensitiveTopics        String[]
+  preferredFormats       String[]
+  availability           String?
+  preferredContactMethod String?
+  contactInfoEncrypted   String?
+  contactInfoHash        String?
+  consentToFollowUp      Boolean  @default(false)
+  source                 String?
+  referrer               String?
+  ipHash                 String?
+  userAgentHash          String?
+
+  @@index([createdAt])
+  @@index([anonymousSessionId])
+  @@index([strongestTopic])
+  @@index([contactInfoHash])
+}
