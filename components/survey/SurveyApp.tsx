@@ -24,6 +24,11 @@ import {
   type AudienceQuestionnaireSettings,
   type QuestionnaireConfig
 } from "@/lib/questionnaire-config";
+import {
+  GENERAL_FOLLOW_UPS,
+  getFollowUpsForTopic,
+  type FollowUpQuestion
+} from "@/lib/follow-ups";
 import { cn } from "@/lib/utils";
 
 type TopicRatingDraft = {
@@ -49,6 +54,7 @@ type SurveyDraft = {
   storyUsagePreference: string;
   storyEmotionIntensity: number;
   participationWillingness: string[];
+  followUpAnswers: Record<string, string | string[]>;
   contactInfo: string;
   nickname: string;
   additionalSuggestions: string;
@@ -71,7 +77,7 @@ type AudienceQuestionnaireConfig = QuestionnaireConfig & {
 
 const STORAGE_KEY = "university-podcast-survey-draft-v1";
 const SESSION_KEY = "university-podcast-survey-session-id";
-const steps = ["开场", "身份", "主题", "评分", "故事", "联系"] as const;
+const steps = ["开场", "身份", "主题", "评分", "深入", "故事", "联系"] as const;
 const DEFAULT_CONFIG = getDefaultQuestionnaireConfig("audience") as AudienceQuestionnaireConfig;
 
 function createSessionId() {
@@ -107,6 +113,7 @@ function getInitialDraft(): SurveyDraft {
     storyUsagePreference: "",
     storyEmotionIntensity: 3,
     participationWillingness: ["只填写问卷"],
+    followUpAnswers: {},
     contactInfo: "",
     nickname: "",
     additionalSuggestions: "",
@@ -307,6 +314,45 @@ function ScorePicker({
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+function FollowUpField({
+  question,
+  value,
+  onChange
+}: {
+  question: FollowUpQuestion;
+  value: string | string[] | undefined;
+  onChange: (value: string | string[]) => void;
+}) {
+  return (
+    <div>
+      <FieldLabel title={question.title} hint={question.hint} />
+      {question.kind === "single" ? (
+        <SingleChoice
+          options={question.options ?? []}
+          value={typeof value === "string" ? value : ""}
+          onChange={(next) => onChange(next)}
+        />
+      ) : null}
+      {question.kind === "multi" ? (
+        <MultiChoice
+          options={question.options ?? []}
+          values={Array.isArray(value) ? value : []}
+          max={question.max}
+          onChange={(next) => onChange(next)}
+        />
+      ) : null}
+      {question.kind === "text" ? (
+        <TextAreaField
+          value={typeof value === "string" ? value : ""}
+          onChange={(next) => onChange(next)}
+          placeholder={question.placeholder ?? ""}
+          maxLength={question.maxLength ?? 800}
+        />
+      ) : null}
     </div>
   );
 }
@@ -595,6 +641,20 @@ export function SurveyApp() {
       discussionScore: 3
     };
 
+  const setFollowUp = (id: string, value: string | string[]) => {
+    setDraft((current) => ({
+      ...current,
+      followUpAnswers: { ...current.followUpAnswers, [id]: value }
+    }));
+    setError("");
+  };
+
+  const priorityTopic = getTopicById(draft.topPriorityTopic);
+  const priorityFollowUps = useMemo(
+    () => getFollowUpsForTopic(draft.topPriorityTopic),
+    [draft.topPriorityTopic]
+  );
+
   const validateStep = () => {
     if (step === 1 && !draft.identityStatus) {
       setError("请选择你的身份。");
@@ -634,7 +694,7 @@ export function SurveyApp() {
       }
     }
 
-    if (step === 4 && draft.personalStory.trim()) {
+    if (step === 5 && draft.personalStory.trim()) {
       if (!draft.storyRelatedTopic) {
         setError("写了故事后，请选择这个经历更接近哪个主题。");
         return false;
@@ -674,8 +734,17 @@ export function SurveyApp() {
 
     const selectedSet = new Set(draft.selectedTopics);
     const normalizedRatings = draft.selectedTopics.map((topicId) => getRating(topicId));
+    // 只提交当前最想先做主题的深入回答 + 结尾常规问题，丢弃曾选过又改掉的主题留下的答案。
+    const relevantFollowUpIds = new Set([
+      ...priorityFollowUps.map((question) => question.id),
+      ...GENERAL_FOLLOW_UPS.map((question) => question.id)
+    ]);
+    const followUpAnswers = Object.fromEntries(
+      Object.entries(draft.followUpAnswers).filter(([id]) => relevantFollowUpIds.has(id))
+    );
     const payload = {
       ...draft,
+      followUpAnswers,
       topicRatings: normalizedRatings,
       privateButWantToHearTopic:
         draft.privateButWantToHearTopic === "没有" ? "没有" : draft.privateButWantToHearTopic,
@@ -784,7 +853,7 @@ export function SurveyApp() {
               type="button"
               onClick={() => {
                 setSubmitResult(null);
-                setStep(4);
+                setStep(5);
               }}
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-coral px-4 text-sm font-semibold text-white hover:bg-coral/90"
             >
@@ -815,7 +884,7 @@ export function SurveyApp() {
               可匿名填写，联系方式非必填
             </div>
           </div>
-          <div className="mt-4 grid grid-cols-6 gap-2" aria-label="问卷进度">
+          <div className="mt-4 grid grid-cols-7 gap-2" aria-label="问卷进度">
             {steps.map((label, index) => (
               <div key={label} className="space-y-1">
                 <div
@@ -1042,6 +1111,35 @@ export function SurveyApp() {
 
           {step === 4 ? (
             <div className="space-y-7">
+              <div className="rounded-md border border-teal/25 bg-teal/5 p-4 text-sm leading-6 text-stone-700">
+                根据你最想先做的主题，我们只问这一个方向的几个问题。每一题都可以不答——选你愿意聊的就好。
+              </div>
+              {priorityTopic ? (
+                <div className="rounded-md border border-line bg-stone-50 p-4">
+                  <p className="text-xs text-stone-500">你最想先做的主题</p>
+                  <h2 className="mt-1 text-lg font-semibold text-ink">{priorityTopic.title}</h2>
+                  <p className="mt-1 text-sm leading-6 text-stone-600">{priorityTopic.description}</p>
+                </div>
+              ) : null}
+              {priorityFollowUps.length ? (
+                priorityFollowUps.map((question) => (
+                  <FollowUpField
+                    key={question.id}
+                    question={question}
+                    value={draft.followUpAnswers[question.id]}
+                    onChange={(value) => setFollowUp(question.id, value)}
+                  />
+                ))
+              ) : (
+                <p className="text-sm text-stone-500">
+                  这个主题暂时没有额外的深入问题，直接进入下一步即可。
+                </p>
+              )}
+            </div>
+          ) : null}
+
+          {step === 5 ? (
+            <div className="space-y-7">
               <div className="rounded-md border border-amber/30 bg-amber/10 p-4 text-sm leading-6 text-stone-700">
                 这一页可以不填。但如果你愿意写一点真实经历，它会非常帮助我们判断：这个主题到底应该怎么聊，应该找什么样的人来聊。
               </div>
@@ -1122,7 +1220,7 @@ export function SurveyApp() {
             </div>
           ) : null}
 
-          {step === 5 ? (
+          {step === 6 ? (
             <div className="space-y-7">
               <div>
                 <FieldLabel title="Q13. 你愿意以哪种方式参与《大学生不必看》？" />
@@ -1158,6 +1256,20 @@ export function SurveyApp() {
                   maxLength={2000}
                   placeholder="可以是一个主题、一句话、一个问题，或者你觉得“网上总是讲错了”的某件事。"
                 />
+              </div>
+
+              <div className="space-y-7 border-t border-line pt-7">
+                <div className="rounded-md border border-amber/30 bg-amber/10 p-4 text-sm leading-6 text-stone-700">
+                  最后几个轻松的问题，和选题无关，只是想多认识你一点。都可以不答。
+                </div>
+                {GENERAL_FOLLOW_UPS.map((question) => (
+                  <FollowUpField
+                    key={question.id}
+                    question={question}
+                    value={draft.followUpAnswers[question.id]}
+                    onChange={(value) => setFollowUp(question.id, value)}
+                  />
+                ))}
               </div>
             </div>
           ) : null}

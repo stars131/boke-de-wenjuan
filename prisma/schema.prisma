@@ -52,6 +52,7 @@ model SurveyResponse {
   storyUsagePreference       String?
   storyEmotionIntensity      Int?
   participationWillingness   String[]
+  followUpAnswers            Json?
   contactInfoEncrypted       String?
   contactInfoHash            String?
   nickname                   String?

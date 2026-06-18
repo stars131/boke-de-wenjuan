@@ -74,6 +74,19 @@ describe("submitSurveySchema", () => {
 
     expect(result.success).toBe(false);
   });
+
+  it("accepts follow-up answers as text and multi-select values", () => {
+    const result = submitSurveySchema.safeParse({
+      ...basePayload,
+      followUpAnswers: {
+        "identity-unloading.angle": ["突然没人给标准答案的空白"],
+        "identity-unloading.reflect": "某次回学校发现不属于这里了。",
+        "general.why": "被陪伴：知道不是只有我这样"
+      }
+    });
+
+    expect(result.success).toBe(true);
+  });
 });
 
 describe("submitGuestSurveySchema", () => {

@@ -23,6 +23,15 @@ export const topicRatingSchema = z.object({
   discussionScore: z.coerce.number().int().min(1).max(5)
 });
 
+// 分支追问 / 结尾常规问题的回答：键为问题 id，值为单条文本或多选数组。
+// 限制键数量与单值长度，避免任意 JSON 膨胀。
+export const followUpAnswersSchema = z
+  .record(z.union([z.string().max(3000), z.array(z.string().max(200)).max(20)]))
+  .refine((value) => Object.keys(value).length <= 80, {
+    message: "追问回答数量超出限制。"
+  })
+  .optional();
+
 export const submitSurveySchema = z
   .object({
     anonymousSessionId: optionalLimitedString(128),
@@ -43,6 +52,7 @@ export const submitSurveySchema = z
     storyUsagePreference: optionalLimitedString(100),
     storyEmotionIntensity: z.coerce.number().int().min(1).max(5).optional(),
     participationWillingness: z.array(z.string()).default([]),
+    followUpAnswers: followUpAnswersSchema,
     contactInfo: optionalLimitedString(300),
     nickname: requiredLimitedString(50, "请设置一个唯一昵称。"),
     additionalSuggestions: optionalLimitedString(2000),

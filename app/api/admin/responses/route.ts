@@ -43,6 +43,7 @@ export async function GET(request: Request) {
       storyEmotionIntensity: item.storyEmotionIntensity,
       storyUsagePreference: item.storyUsagePreference,
       participationWillingness: item.participationWillingness,
+      followUpAnswers: item.followUpAnswers,
       hasContactInfo: Boolean(item.contactInfoEncrypted),
       additionalSuggestions: item.additionalSuggestions,
       review: item.review

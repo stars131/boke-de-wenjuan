@@ -17,6 +17,7 @@ import {
   Mic
 } from "lucide-react";
 import { TOPIC_GROUPS, TOPICS, getTopicById } from "@/lib/topics";
+import { getFollowUpQuestionById } from "@/lib/follow-ups";
 import { RISK_LEVEL_OPTIONS, STORY_STATUS_OPTIONS } from "@/lib/options";
 import type {
   AudienceQuestionnaireSettings,
@@ -78,6 +79,7 @@ type ResponseItem = {
   participationWillingness: string[];
   hasContactInfo: boolean;
   additionalSuggestions?: string;
+  followUpAnswers?: Record<string, string | string[]> | null;
 };
 
 type StoryItem = {
@@ -697,6 +699,21 @@ export function AdminApp() {
                     <p className="mt-3 rounded-md bg-stone-50 p-3 text-sm leading-6 text-stone-700">
                       {truncateText(response.personalStory, 220)}
                     </p>
+                  ) : null}
+                  {response.followUpAnswers && Object.keys(response.followUpAnswers).length ? (
+                    <div className="mt-3 space-y-2 rounded-md border border-line bg-white p-3">
+                      <p className="text-xs font-semibold text-stone-500">深入 / 话题回答</p>
+                      {Object.entries(response.followUpAnswers).map(([id, value]) => (
+                        <div key={id} className="text-sm leading-6">
+                          <span className="text-stone-500">
+                            {getFollowUpQuestionById(id)?.title || id}：
+                          </span>
+                          <span className="text-stone-700">
+                            {Array.isArray(value) ? value.join("、") : value}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   ) : null}
                 </article>
               ))

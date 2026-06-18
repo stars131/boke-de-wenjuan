@@ -12,10 +12,40 @@ import {
 } from "@/lib/security";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { isPotentialGuestLead } from "@/lib/analytics";
+import { FOLLOW_UP_QUESTION_IDS } from "@/lib/follow-ups";
 import {
   normalizeQuestionnaireConfig,
   type AudienceQuestionnaireSettings
 } from "@/lib/questionnaire-config";
+
+const FOLLOW_UP_ID_SET = new Set<string>(FOLLOW_UP_QUESTION_IDS);
+
+/** 只保留已知问题的回答，并丢弃空值，避免存入任意键或空白内容。 */
+function sanitizeFollowUpAnswers(
+  answers: Record<string, string | string[]> | undefined
+): Record<string, string | string[]> | undefined {
+  if (!answers) {
+    return undefined;
+  }
+
+  const cleaned: Record<string, string | string[]> = {};
+  for (const [key, value] of Object.entries(answers)) {
+    if (!FOLLOW_UP_ID_SET.has(key)) {
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      const items = value.map((item) => item.trim()).filter(Boolean);
+      if (items.length) {
+        cleaned[key] = items;
+      }
+    } else if (typeof value === "string" && value.trim()) {
+      cleaned[key] = value.trim();
+    }
+  }
+
+  return Object.keys(cleaned).length ? cleaned : undefined;
+}
 
 function zodErrorToFields(error: { issues: { path: (string | number)[]; message: string }[] }) {
   return Object.fromEntries(error.issues.map((issue) => [issue.path.join(".") || "form", issue.message]));
@@ -127,6 +157,7 @@ export async function POST(request: Request) {
   const contactInfoHash = data.contactInfo ? hashContactInfo(data.contactInfo) : null;
   const participantNickname = data.nickname.trim().replace(/\s+/g, " ");
   const participantNormalizedNickname = normalizedNickname(participantNickname);
+  const followUpAnswers = sanitizeFollowUpAnswers(data.followUpAnswers);
 
   try {
     const response = await prisma.$transaction(async (tx) => {
@@ -184,6 +215,7 @@ export async function POST(request: Request) {
           storyUsagePreference: data.storyUsagePreference,
           storyEmotionIntensity: data.storyEmotionIntensity,
           participationWillingness: data.participationWillingness,
+          followUpAnswers: followUpAnswers ?? Prisma.JsonNull,
           contactInfoEncrypted,
           contactInfoHash,
           nickname: participantNickname,
