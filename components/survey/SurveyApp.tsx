@@ -1112,7 +1112,7 @@ export function SurveyApp() {
           {step === 4 ? (
             <div className="space-y-7">
               <div className="rounded-md border border-teal/25 bg-teal/5 p-4 text-sm leading-6 text-stone-700">
-                根据你最想先做的主题，我们只问这一个方向的几个问题。每一题都可以不答——选你愿意聊的就好。
+                根据你最想先做的主题，我们只想多问这一个方向的几个问题。每一题都可以跳过——聊你愿意聊的就好。
               </div>
               {priorityTopic ? (
                 <div className="rounded-md border border-line bg-stone-50 p-4">
@@ -1147,13 +1147,13 @@ export function SurveyApp() {
                 如果你正在经历强烈痛苦、伤害风险或现实危险，请优先联系身边可信任的人、学校心理中心、当地紧急电话或专业机构。这个问卷不能替代现实帮助。
               </div>
               <div>
-                <FieldLabel title="Q9. 你有没有一个和这些主题有关的真实经历？" />
+                <FieldLabel title="Q9. 如果你愿意，有没有一段和这些主题有关的真实经历想说说？" />
                 <TextAreaField
                   value={draft.personalStory}
                   onChange={(personalStory) => updateDraft({ personalStory })}
                   maxLength={3000}
                   minHint={50}
-                  placeholder="可以写一件具体的小事：某次搬寝室、某次面试失败、某段关系里的争吵、某次和父母通电话、某个熬夜到天亮的晚上……不需要写得完整，也不需要写得漂亮。"
+                  placeholder="可以写一件具体的小事：某次搬寝室、某次面试、某段关系里的对话、某次和父母通电话、某个熬到天亮的晚上……不用写完整，也不用写得漂亮。不想写也完全没关系。"
                 />
               </div>
               <div className="grid gap-5 md:grid-cols-2">
@@ -1249,7 +1249,7 @@ export function SurveyApp() {
                 </div>
               </div>
               <div>
-                <FieldLabel title="Q16. 还有什么你希望这个节目一定要聊的吗？" />
+                <FieldLabel title="Q16. 还有什么你希望这个节目聊聊的吗？" />
                 <TextAreaField
                   value={draft.additionalSuggestions}
                   onChange={(additionalSuggestions) => updateDraft({ additionalSuggestions })}

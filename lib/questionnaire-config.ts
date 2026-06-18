@@ -65,10 +65,10 @@ type StoredQuestionnaireConfig = {
 export const DEFAULT_AUDIENCE_CONFIG: QuestionnaireConfig = {
   key: "audience",
   title: "《大学生不必看》观众问卷",
-  description: "告诉我们你最想看哪些选题，也可以留下真实故事或后续参与意愿。",
+  description: "只想问问你最想看哪些选题；愿意的话，也可以留下真实故事或后续参与意愿。",
   introBadge: "观众问卷 · 3-8 分钟 · 昵称用于查询",
   introText:
-    "这份问卷用于决定第一季重点选题、寻找真实故事和潜在嘉宾。你可以使用唯一昵称，不需要填写真实姓名。",
+    "这份问卷会用来决定第一季先聊什么，也帮我们找到值得慢慢聊的人和故事。你可以只用一个昵称，不需要填真实姓名，大部分问题都能跳过。",
   ctaLabel: "进入观众问卷",
   enabledTopicIds: [...TOPIC_IDS],
   settings: {
