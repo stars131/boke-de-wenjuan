@@ -16,14 +16,14 @@ import {
 } from "lucide-react";
 import { TOPIC_GROUPS, TOPICS, getTopicById, type Topic } from "@/lib/topics";
 import {
-  CONTENT_PLATFORM_OPTIONS,
-  CURRENT_STATE_OPTIONS,
-  IDENTITY_STATUS_OPTIONS,
-  PARTICIPATION_OPTIONS,
-  PREFERRED_FORMAT_OPTIONS,
   SCORE_LABELS,
   STORY_USAGE_OPTIONS
 } from "@/lib/options";
+import {
+  getDefaultQuestionnaireConfig,
+  type AudienceQuestionnaireSettings,
+  type QuestionnaireConfig
+} from "@/lib/questionnaire-config";
 import { cn } from "@/lib/utils";
 
 type TopicRatingDraft = {
@@ -65,9 +65,14 @@ type SubmitResult = {
   } | null;
 };
 
+type AudienceQuestionnaireConfig = QuestionnaireConfig & {
+  settings: AudienceQuestionnaireSettings;
+};
+
 const STORAGE_KEY = "university-podcast-survey-draft-v1";
 const SESSION_KEY = "university-podcast-survey-session-id";
 const steps = ["开场", "身份", "主题", "评分", "故事", "联系"] as const;
+const DEFAULT_CONFIG = getDefaultQuestionnaireConfig("audience") as AudienceQuestionnaireConfig;
 
 function createSessionId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -75,6 +80,14 @@ function createSessionId() {
   }
 
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function scrollToPageTop(behavior: ScrollBehavior = "smooth") {
+  window.requestAnimationFrame(() => {
+    const scrollingElement = document.scrollingElement || document.documentElement;
+    scrollingElement.scrollTo({ top: 0, left: 0, behavior });
+    window.scrollTo({ top: 0, left: 0, behavior });
+  });
 }
 
 function getInitialDraft(): SurveyDraft {
@@ -298,7 +311,13 @@ function ScorePicker({
   );
 }
 
-function IntroScreen({ onStart }: { onStart: () => void }) {
+function IntroScreen({
+  config,
+  onStart
+}: {
+  config: AudienceQuestionnaireConfig;
+  onStart: () => void;
+}) {
   return (
     <section className="relative min-h-screen overflow-hidden bg-paper">
       <div className="absolute inset-x-0 top-0 h-[62vh] bg-[url('/survey-hero.png')] bg-cover bg-center" />
@@ -306,20 +325,18 @@ function IntroScreen({ onStart }: { onStart: () => void }) {
       <div className="relative mx-auto flex min-h-screen w-full max-w-6xl flex-col justify-end px-4 pb-10 pt-20 sm:px-6 lg:px-8">
         <div className="max-w-3xl pb-[min(8vh,72px)] text-white drop-shadow">
           <p className="mb-4 inline-flex items-center rounded-md bg-black/35 px-3 py-1 text-sm backdrop-blur">
-            匿名 · 3-8 分钟 · 用于第一季选题
+            {config.introBadge}
           </p>
-          <h1 className="text-4xl font-semibold leading-tight sm:text-6xl">
-            《大学生不必看》选题问卷
-          </h1>
+          <h1 className="text-4xl font-semibold leading-tight sm:text-6xl">{config.title}</h1>
           <p className="mt-5 max-w-2xl text-lg leading-8 text-white">
-            我们想聊一点大学里不总被认真讨论的事。不是学习方法，不是成功经验，也不是“你应该怎样”。
+            {config.description}
           </p>
         </div>
 
         <div className="grid gap-5 rounded-md border border-line bg-paper/95 p-5 shadow-panel backdrop-blur md:grid-cols-[1.1fr_0.9fr] md:p-7">
           <div className="space-y-4 text-sm leading-7 text-stone-700">
             <p>
-              这份问卷大约需要 3-8 分钟。你可以匿名填写，也可以留下联系方式，之后我们可能邀请你参与节目、匿名访谈或故事征集。
+              {config.introText}
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-md border border-line bg-white p-4">
@@ -345,7 +362,7 @@ function IntroScreen({ onStart }: { onStart: () => void }) {
               onClick={onStart}
               className="inline-flex min-h-12 items-center justify-center gap-2 rounded-md bg-coral px-5 py-3 text-sm font-semibold text-white transition hover:bg-coral/90"
             >
-              开始填写
+              {config.ctaLabel}
               <ArrowRight className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
@@ -409,6 +426,7 @@ function TopicCard({
 
 export function SurveyApp() {
   const [step, setStep] = useState(0);
+  const [config, setConfig] = useState<AudienceQuestionnaireConfig>(DEFAULT_CONFIG);
   const [draft, setDraft] = useState<SurveyDraft>(getInitialDraft);
   const [hydrated, setHydrated] = useState(false);
   const [error, setError] = useState("");
@@ -417,6 +435,43 @@ export function SurveyApp() {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(
     Object.fromEntries(TOPIC_GROUPS.map((group) => [group, true]))
   );
+  const settings = config.settings;
+  const enabledTopics = useMemo(
+    () => TOPICS.filter((topic) => config.enabledTopicIds.includes(topic.id)),
+    [config.enabledTopicIds]
+  );
+  const enabledTopicGroups = useMemo(
+    () => TOPIC_GROUPS.filter((group) => enabledTopics.some((topic) => topic.group === group)),
+    [enabledTopics]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch("/api/questionnaire-config?type=audience", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((nextConfig) => {
+        if (!cancelled && nextConfig?.key === "audience") {
+          setConfig(nextConfig as AudienceQuestionnaireConfig);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setConfig(DEFAULT_CONFIG);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    setOpenGroups((current) => ({
+      ...Object.fromEntries(enabledTopicGroups.map((group) => [group, true])),
+      ...current
+    }));
+  }, [enabledTopicGroups]);
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -462,6 +517,14 @@ export function SurveyApp() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...draft, step }));
   }, [draft, hydrated, step, submitResult]);
 
+  useEffect(() => {
+    if (!hydrated) {
+      return;
+    }
+
+    scrollToPageTop();
+  }, [hydrated, step, submitResult]);
+
   const selectedTopics = useMemo(
     () => draft.selectedTopics.map((id) => getTopicById(id)).filter(Boolean) as Topic[],
     [draft.selectedTopics]
@@ -475,8 +538,8 @@ export function SurveyApp() {
   const updateSelectedTopics = (topicId: string) => {
     const selected = draft.selectedTopics.includes(topicId);
 
-    if (!selected && draft.selectedTopics.length >= 8) {
-      setError("最多只能选择 8 个主题。先取消一个，再选择新的。");
+    if (!selected && draft.selectedTopics.length >= settings.maxTopicSelections) {
+      setError(`最多只能选择 ${settings.maxTopicSelections} 个主题。先取消一个，再选择新的。`);
       return;
     }
 
@@ -538,8 +601,13 @@ export function SurveyApp() {
       return false;
     }
 
-    if (step === 2 && draft.selectedTopics.length < 3) {
-      setError("请至少选择 3 个主题，再进入评分页。");
+    if (step === 1 && !draft.nickname.trim()) {
+      setError("请设置一个唯一昵称，用于之后查询自己的提交记录。");
+      return false;
+    }
+
+    if (step === 2 && draft.selectedTopics.length < settings.minTopicSelections) {
+      setError(`请至少选择 ${settings.minTopicSelections} 个主题，再进入评分页。`);
       return false;
     }
 
@@ -584,15 +652,14 @@ export function SurveyApp() {
 
   const goNext = () => {
     if (!validateStep()) {
+      scrollToPageTop();
       return;
     }
 
-    window.scrollTo({ top: 0, behavior: "smooth" });
     setStep((current) => Math.min(current + 1, steps.length - 1));
   };
 
   const goPrevious = () => {
-    window.scrollTo({ top: 0, behavior: "smooth" });
     setStep((current) => Math.max(current - 1, 0));
     setError("");
   };
@@ -641,7 +708,6 @@ export function SurveyApp() {
         recommendedTopic: result.recommendedTopic
       });
       setStep(steps.length);
-      window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "提交失败，请稍后再试。");
     } finally {
@@ -649,26 +715,11 @@ export function SurveyApp() {
     }
   };
 
-  const resetSurvey = () => {
-    const sessionId = createSessionId();
-    localStorage.setItem(SESSION_KEY, sessionId);
-    localStorage.removeItem(STORAGE_KEY);
-    setDraft({
-      ...getInitialDraft(),
-      anonymousSessionId: sessionId,
-      referrer: document.referrer,
-      source: new URLSearchParams(window.location.search).get("source") || ""
-    });
-    setStep(0);
-    setSubmitResult(null);
-    setError("");
-  };
-
   const shareSurvey = async () => {
     const url = window.location.href;
     if (navigator.share) {
       await navigator.share({
-        title: "《大学生不必看》选题问卷",
+        title: config.title,
         text: "一份关于毕业、关系、工作、钱、家庭和未来的匿名选题问卷",
         url
       });
@@ -713,7 +764,9 @@ export function SurveyApp() {
           <div className="mt-8 grid gap-3 sm:grid-cols-3">
             <button
               type="button"
-              onClick={resetSurvey}
+              onClick={() => {
+                window.location.href = "/";
+              }}
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-line bg-white px-4 text-sm font-semibold text-ink hover:border-teal"
             >
               <RefreshCcw className="h-4 w-4" aria-hidden="true" />
@@ -745,7 +798,7 @@ export function SurveyApp() {
   }
 
   if (step === 0) {
-    return <IntroScreen onStart={() => setStep(1)} />;
+    return <IntroScreen config={config} onStart={() => setStep(1)} />;
   }
 
   return (
@@ -754,7 +807,7 @@ export function SurveyApp() {
         <header className="mb-5 rounded-md border border-line bg-white p-4 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-sm text-stone-500">《大学生不必看》选题问卷</p>
+              <p className="text-sm text-stone-500">{config.title}</p>
               <h1 className="mt-1 text-2xl font-semibold text-ink">{steps[step]}</h1>
             </div>
             <div className="inline-flex items-center gap-2 rounded-md bg-teal/10 px-3 py-2 text-sm text-teal">
@@ -790,34 +843,47 @@ export function SurveyApp() {
           {step === 1 ? (
             <div className="space-y-8">
               <div>
-                <FieldLabel title="Q1. 你现在的身份是？" required />
+                <FieldLabel
+                  title="Q1. 设置一个唯一昵称"
+                  hint="用于之后在首页查询自己的提交记录，不需要填写真实姓名。"
+                  required
+                />
+                <input
+                  value={draft.nickname}
+                  onChange={(event) => updateDraft({ nickname: event.target.value.slice(0, 50) })}
+                  placeholder="例如：阿北 / test001 / 某位研三"
+                  className="min-h-11 w-full rounded-md border border-line bg-white px-4 text-sm text-ink placeholder:text-stone-400"
+                />
+              </div>
+              <div>
+                <FieldLabel title="Q2. 你现在的身份是？" required />
                 <SingleChoice
-                  options={IDENTITY_STATUS_OPTIONS}
+                  options={settings.identityOptions}
                   value={draft.identityStatus}
                   onChange={(identityStatus) => updateDraft({ identityStatus })}
                 />
               </div>
               <div>
-                <FieldLabel title="Q2. 你现在最接近哪种状态？" hint="最多选 5 个，也可以不选。" />
+                <FieldLabel title="Q3. 你现在最接近哪种状态？" hint="最多选 5 个，也可以不选。" />
                 <MultiChoice
-                  options={CURRENT_STATE_OPTIONS}
+                  options={settings.currentStateOptions}
                   values={draft.currentStates}
                   max={5}
                   onChange={(currentStates) => updateDraft({ currentStates })}
                 />
               </div>
               <div>
-                <FieldLabel title="Q3. 你更常在哪些平台看这类内容？" />
+                <FieldLabel title="Q4. 你更常在哪些平台看这类内容？" />
                 <MultiChoice
-                  options={CONTENT_PLATFORM_OPTIONS}
+                  options={settings.contentPlatformOptions}
                   values={draft.contentPlatforms}
                   onChange={(contentPlatforms) => updateDraft({ contentPlatforms })}
                 />
               </div>
               <div>
-                <FieldLabel title="Q4. 你更喜欢哪种内容形式？" hint="最多选 4 个。" />
+                <FieldLabel title="Q5. 你更喜欢哪种内容形式？" hint="最多选 4 个。" />
                 <MultiChoice
-                  options={PREFERRED_FORMAT_OPTIONS}
+                  options={settings.preferredFormatOptions}
                   values={draft.preferredFormats}
                   max={4}
                   onChange={(preferredFormats) => updateDraft({ preferredFormats })}
@@ -830,20 +896,22 @@ export function SurveyApp() {
             <div>
               <FieldLabel
                 title="Q5. 你最想看哪些主题？"
-                hint="请选择你最想看的 5-8 个；至少 3 个，最多 8 个。不需要选正确的，只选你真的会点进去看的。"
+                hint={`请选择你最想看的主题；至少 ${settings.minTopicSelections} 个，最多 ${settings.maxTopicSelections} 个。不需要选正确的，只选你真的会点进去看的。`}
                 required
               />
               <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
                 <span className="rounded-md bg-stone-100 px-3 py-1 text-stone-700">
-                  已选 {draft.selectedTopics.length}/8
+                  已选 {draft.selectedTopics.length}/{settings.maxTopicSelections}
                 </span>
-                {draft.selectedTopics.length < 3 ? (
-                  <span className="text-coral">还需要至少选择 {3 - draft.selectedTopics.length} 个</span>
+                {draft.selectedTopics.length < settings.minTopicSelections ? (
+                  <span className="text-coral">
+                    还需要至少选择 {settings.minTopicSelections - draft.selectedTopics.length} 个
+                  </span>
                 ) : null}
               </div>
               <div className="space-y-4">
-                {TOPIC_GROUPS.map((group) => {
-                  const groupTopics = TOPICS.filter((topic) => topic.group === group);
+                {enabledTopicGroups.map((group) => {
+                  const groupTopics = enabledTopics.filter((topic) => topic.group === group);
                   const open = openGroups[group];
 
                   return (
@@ -864,7 +932,9 @@ export function SurveyApp() {
                         <div className="grid gap-3 border-t border-line p-3 md:grid-cols-2 xl:grid-cols-3">
                           {groupTopics.map((topic) => {
                             const selectedIndex = draft.selectedTopics.indexOf(topic.id);
-                            const disabled = selectedIndex < 0 && draft.selectedTopics.length >= 8;
+                            const disabled =
+                              selectedIndex < 0 &&
+                              draft.selectedTopics.length >= settings.maxTopicSelections;
                             return (
                               <TopicCard
                                 key={topic.id}
@@ -951,7 +1021,7 @@ export function SurveyApp() {
                   className="min-h-11 w-full rounded-md border border-line bg-white px-4 text-sm text-ink"
                 >
                   <option value="没有">没有</option>
-                  {TOPICS.map((topic) => (
+                  {enabledTopics.map((topic) => (
                     <option key={topic.id} value={topic.id}>
                       {topic.title}
                     </option>
@@ -1000,7 +1070,7 @@ export function SurveyApp() {
                     className="min-h-11 w-full rounded-md border border-line bg-white px-4 text-sm text-ink"
                   >
                     <option value="">请选择</option>
-                    {TOPICS.map((topic) => (
+                    {enabledTopics.map((topic) => (
                       <option key={topic.id} value={topic.id}>
                         {topic.title}
                       </option>
@@ -1057,7 +1127,7 @@ export function SurveyApp() {
               <div>
                 <FieldLabel title="Q13. 你愿意以哪种方式参与《大学生不必看》？" />
                 <MultiChoice
-                  options={PARTICIPATION_OPTIONS}
+                  options={settings.participationOptions}
                   values={draft.participationWillingness}
                   onChange={(participationWillingness) => updateDraft({ participationWillingness })}
                 />
@@ -1072,14 +1142,12 @@ export function SurveyApp() {
                     className="min-h-11 w-full rounded-md border border-line bg-white px-4 text-sm text-ink placeholder:text-stone-400"
                   />
                 </div>
-                <div>
-                  <FieldLabel title="Q15. 你希望我们如何称呼你？" />
-                  <input
-                    value={draft.nickname}
-                    onChange={(event) => updateDraft({ nickname: event.target.value.slice(0, 50) })}
-                    placeholder="可以是假名、昵称、英文名，也可以不填。"
-                    className="min-h-11 w-full rounded-md border border-line bg-white px-4 text-sm text-ink placeholder:text-stone-400"
-                  />
+                <div className="rounded-md border border-teal/20 bg-teal/5 p-4">
+                  <p className="text-sm font-semibold text-teal">当前唯一昵称</p>
+                  <p className="mt-2 text-lg font-semibold text-ink">{draft.nickname || "未设置"}</p>
+                  <p className="mt-2 text-sm leading-6 text-stone-600">
+                    这个昵称会用于首页查询提交记录。如需修改，请回到“身份”步骤。
+                  </p>
                 </div>
               </div>
               <div>

@@ -6,20 +6,16 @@ import {
   Check,
   Copy,
   Loader2,
-  MessageCircle,
   Mic,
   Send,
   ShieldCheck
 } from "lucide-react";
-import {
-  GUEST_CONTACT_METHOD_OPTIONS,
-  GUEST_FORMAT_OPTIONS,
-  GUEST_IDENTITY_OPTIONS,
-  GUEST_RELATIONSHIP_OPTIONS,
-  GUEST_SENSITIVE_TOPIC_OPTIONS,
-  GUEST_TALK_ANGLE_OPTIONS
-} from "@/lib/guest-options";
 import { TOPICS, getTopicById } from "@/lib/topics";
+import {
+  getDefaultQuestionnaireConfig,
+  type GuestQuestionnaireSettings,
+  type QuestionnaireConfig
+} from "@/lib/questionnaire-config";
 import { cn } from "@/lib/utils";
 
 type GuestDraft = {
@@ -54,8 +50,13 @@ type SubmitResult = {
   } | null;
 };
 
+type GuestQuestionnaireConfig = QuestionnaireConfig & {
+  settings: GuestQuestionnaireSettings;
+};
+
 const STORAGE_KEY = "university-podcast-guest-survey-draft-v1";
 const SESSION_KEY = "university-podcast-guest-survey-session-id";
+const DEFAULT_CONFIG = getDefaultQuestionnaireConfig("guest") as GuestQuestionnaireConfig;
 
 function createSessionId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -232,11 +233,38 @@ function TextArea({
 }
 
 export function GuestSurveyApp() {
+  const [config, setConfig] = useState<GuestQuestionnaireConfig>(DEFAULT_CONFIG);
   const [draft, setDraft] = useState<GuestDraft>(getInitialDraft);
   const [hydrated, setHydrated] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [submitResult, setSubmitResult] = useState<SubmitResult | null>(null);
+  const settings = config.settings;
+  const enabledTopics = useMemo(
+    () => TOPICS.filter((topic) => config.enabledTopicIds.includes(topic.id)),
+    [config.enabledTopicIds]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch("/api/questionnaire-config?type=guest", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((nextConfig) => {
+        if (!cancelled && nextConfig?.key === "guest") {
+          setConfig(nextConfig as GuestQuestionnaireConfig);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setConfig(DEFAULT_CONFIG);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -292,8 +320,8 @@ export function GuestSurveyApp() {
   const toggleTopic = (topicId: string) => {
     const selected = draft.selectedTopics.includes(topicId);
 
-    if (!selected && draft.selectedTopics.length >= 8) {
-      setError("最多选择 8 个主题。");
+    if (!selected && draft.selectedTopics.length >= settings.maxTopicSelections) {
+      setError(`最多选择 ${settings.maxTopicSelections} 个主题。`);
       return;
     }
 
@@ -308,13 +336,18 @@ export function GuestSurveyApp() {
   };
 
   const validate = () => {
+    if (!draft.guestName.trim()) {
+      setError("请设置一个唯一昵称，用于之后查询自己的提交记录。");
+      return false;
+    }
+
     if (!draft.guestIdentity) {
       setError("请选择你的嘉宾身份。");
       return false;
     }
 
-    if (draft.selectedTopics.length < 1) {
-      setError("请至少选择 1 个想聊的主题。");
+    if (draft.selectedTopics.length < settings.minTopicSelections) {
+      setError(`请至少选择 ${settings.minTopicSelections} 个想聊的主题。`);
       return false;
     }
 
@@ -389,7 +422,7 @@ export function GuestSurveyApp() {
     const url = window.location.href;
     if (navigator.share) {
       await navigator.share({
-        title: "《大学生不必看》嘉宾沟通问卷",
+        title: config.title,
         text: "一份给潜在嘉宾填写的录制前沟通表",
         url
       });
@@ -433,7 +466,7 @@ export function GuestSurveyApp() {
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-line bg-white px-4 text-sm font-semibold text-ink hover:border-teal"
             >
               <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-              观众问卷
+              返回首页
             </a>
             <button
               type="button"
@@ -462,13 +495,13 @@ export function GuestSurveyApp() {
         <div className="mx-auto grid max-w-6xl gap-8 px-4 py-10 sm:px-6 lg:grid-cols-[1fr_360px] lg:px-8">
           <div>
             <p className="inline-flex items-center rounded-md bg-white/10 px-3 py-1 text-sm">
-              给潜在嘉宾 · 录制前沟通 · 可匿名
+              {config.introBadge}
             </p>
             <h1 className="mt-5 max-w-3xl text-4xl font-semibold leading-tight sm:text-5xl">
-              《大学生不必看》嘉宾沟通问卷
+              {config.title}
             </h1>
             <p className="mt-5 max-w-3xl text-base leading-8 text-stone-200">
-              这份问卷不是让你立刻承诺上节目，而是先让我们知道：你想聊什么，能聊到什么程度，哪些内容必须被保护。
+              {config.introText}
             </p>
           </div>
           <div className="rounded-md border border-white/15 bg-white/10 p-5">
@@ -497,7 +530,11 @@ export function GuestSurveyApp() {
             />
             <div className="grid gap-5 md:grid-cols-2">
               <div>
-                <FieldLabel title="你希望我们如何称呼你？" hint="可以是假名、昵称，也可以不填。" />
+                <FieldLabel
+                  title="设置一个唯一昵称"
+                  hint="用于之后在首页查询自己的提交记录，不需要填写真实姓名。"
+                  required
+                />
                 <input
                   value={draft.guestName}
                   onChange={(event) => updateDraft({ guestName: event.target.value.slice(0, 80) })}
@@ -513,7 +550,7 @@ export function GuestSurveyApp() {
                   className="min-h-11 w-full rounded-md border border-line bg-white px-4 text-sm"
                 >
                   <option value="">请选择</option>
-                  {GUEST_IDENTITY_OPTIONS.map((option) => (
+                  {settings.identityOptions.map((option) => (
                     <option key={option} value={option}>
                       {option}
                     </option>
@@ -533,7 +570,7 @@ export function GuestSurveyApp() {
             <div className="mt-5">
               <FieldLabel title="你和这些话题的关系更接近什么？" />
               <MultiChoice
-                options={GUEST_RELATIONSHIP_OPTIONS}
+                options={settings.relationshipOptions}
                 values={draft.relationshipToTopics}
                 onChange={(relationshipToTopics) => updateDraft({ relationshipToTopics })}
                 max={6}
@@ -549,14 +586,16 @@ export function GuestSurveyApp() {
             />
             <div className="mb-3 flex flex-wrap gap-2 text-sm">
               <span className="rounded-md bg-stone-100 px-3 py-1 text-stone-700">
-                已选 {draft.selectedTopics.length}/8
+                已选 {draft.selectedTopics.length}/{settings.maxTopicSelections}
               </span>
-              {draft.selectedTopics.length === 0 ? <span className="text-coral">至少选择 1 个</span> : null}
+              {draft.selectedTopics.length < settings.minTopicSelections ? (
+                <span className="text-coral">至少选择 {settings.minTopicSelections} 个</span>
+              ) : null}
             </div>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {TOPICS.map((topic) => {
+              {enabledTopics.map((topic) => {
                 const selected = draft.selectedTopics.includes(topic.id);
-                const disabled = !selected && draft.selectedTopics.length >= 8;
+                const disabled = !selected && draft.selectedTopics.length >= settings.maxTopicSelections;
                 return (
                   <button
                     key={topic.id}
@@ -621,7 +660,7 @@ export function GuestSurveyApp() {
             <div>
               <FieldLabel title="你比较愿意从哪些角度展开？" />
               <MultiChoice
-                options={GUEST_TALK_ANGLE_OPTIONS}
+                options={settings.talkAngleOptions}
                 values={draft.talkAngles}
                 onChange={(talkAngles) => updateDraft({ talkAngles })}
                 max={8}
@@ -659,7 +698,7 @@ export function GuestSurveyApp() {
             <div className="mt-5">
               <FieldLabel title="哪些内容需要特别保护或避免公开？" />
               <MultiChoice
-                options={GUEST_SENSITIVE_TOPIC_OPTIONS}
+                options={settings.sensitiveTopicOptions}
                 values={draft.sensitiveTopics}
                 onChange={(sensitiveTopics) => updateDraft({ sensitiveTopics })}
                 max={8}
@@ -677,7 +716,7 @@ export function GuestSurveyApp() {
             <div className="mt-5">
               <FieldLabel title="你更能接受哪些沟通或录制形式？" />
               <MultiChoice
-                options={GUEST_FORMAT_OPTIONS}
+                options={settings.preferredFormatOptions}
                 values={draft.preferredFormats}
                 onChange={(preferredFormats) => updateDraft({ preferredFormats })}
                 max={8}
@@ -701,7 +740,7 @@ export function GuestSurveyApp() {
                   className="min-h-11 w-full rounded-md border border-line bg-white px-4 text-sm"
                 >
                   <option value="">请选择</option>
-                  {GUEST_CONTACT_METHOD_OPTIONS.map((option) => (
+                  {settings.contactMethodOptions.map((option) => (
                     <option key={option} value={option}>
                       {option}
                     </option>
@@ -737,7 +776,7 @@ export function GuestSurveyApp() {
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-line bg-white px-4 text-sm font-semibold text-ink hover:border-teal"
             >
               <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-              返回观众问卷
+              返回首页
             </a>
             <div className="flex flex-wrap gap-3">
               <span className="inline-flex min-h-11 items-center gap-2 rounded-md bg-teal/10 px-3 text-sm text-teal">

@@ -13,6 +13,9 @@ const optionalLimitedString = (max: number) =>
       return trimmed ? trimmed : undefined;
     });
 
+const requiredLimitedString = (max: number, message: string) =>
+  z.string().trim().min(1, message).max(max);
+
 export const topicRatingSchema = z.object({
   topicId: z.string(),
   interestScore: z.coerce.number().int().min(1).max(5),
@@ -29,9 +32,9 @@ export const submitSurveySchema = z
     preferredFormats: z.array(z.string()).max(4, "内容形式最多选择 4 个。").default([]),
     selectedTopics: z
       .array(z.string())
-      .min(3, "请至少选择 3 个主题。")
-      .max(8, "最多只能选择 8 个主题。"),
-    topicRatings: z.array(topicRatingSchema).min(3),
+      .min(1, "请至少选择主题。")
+      .max(12, "主题选择数量超出限制。"),
+    topicRatings: z.array(topicRatingSchema).min(1),
     topPriorityTopic: z.string().trim().min(1, "请选择第一季最想先看的主题。"),
     privateButWantToHearTopic: optionalLimitedString(100),
     privateButWantToHearReason: optionalLimitedString(1000),
@@ -41,7 +44,7 @@ export const submitSurveySchema = z
     storyEmotionIntensity: z.coerce.number().int().min(1).max(5).optional(),
     participationWillingness: z.array(z.string()).default([]),
     contactInfo: optionalLimitedString(300),
-    nickname: optionalLimitedString(50),
+    nickname: requiredLimitedString(50, "请设置一个唯一昵称。"),
     additionalSuggestions: optionalLimitedString(2000),
     source: optionalLimitedString(100),
     referrer: optionalLimitedString(500)
@@ -132,14 +135,14 @@ export type SubmitSurveyInput = z.infer<typeof submitSurveySchema>;
 export const submitGuestSurveySchema = z
   .object({
     anonymousSessionId: optionalLimitedString(128),
-    guestName: optionalLimitedString(80),
+    guestName: requiredLimitedString(80, "请设置一个唯一昵称。"),
     guestIdentity: z.string().trim().min(1, "请选择你的嘉宾身份。"),
     organization: optionalLimitedString(120),
     relationshipToTopics: z.array(z.string()).max(6, "关联方式最多选择 6 个。").default([]),
     selectedTopics: z
       .array(z.string())
       .min(1, "请至少选择 1 个想聊的主题。")
-      .max(8, "最多选择 8 个主题。"),
+      .max(12, "主题选择数量超出限制。"),
     customTopics: optionalLimitedString(1000),
     strongestTopic: z.string().trim().min(1, "请选择最想展开聊的主题。"),
     talkAngles: z.array(z.string()).max(8, "展开角度最多选择 8 个。").default([]),

@@ -11,9 +11,30 @@ import {
 } from "@/lib/security";
 import { getTopicById } from "@/lib/topics";
 import { submitGuestSurveySchema } from "@/lib/validation";
+import {
+  normalizeQuestionnaireConfig,
+  type GuestQuestionnaireSettings
+} from "@/lib/questionnaire-config";
 
 function zodErrorToFields(error: { issues: { path: (string | number)[]; message: string }[] }) {
   return Object.fromEntries(error.issues.map((issue) => [issue.path.join(".") || "form", issue.message]));
+}
+
+function normalizedNickname(nickname: string) {
+  return nickname.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function validationError(message: string) {
+  return NextResponse.json(
+    {
+      ok: false,
+      error: {
+        code: "VALIDATION_ERROR",
+        message
+      }
+    },
+    { status: 400 }
+  );
 }
 
 export async function POST(request: Request) {
@@ -54,63 +75,105 @@ export async function POST(request: Request) {
   }
 
   const data = parsed.data;
+  const questionnaireConfig = normalizeQuestionnaireConfig(
+    "guest",
+    await prisma.questionnaireConfig.findUnique({
+      where: {
+        key: "guest"
+      }
+    })
+  );
+  const settings = questionnaireConfig.settings as GuestQuestionnaireSettings;
+  const enabledTopicIds = new Set(questionnaireConfig.enabledTopicIds);
+
+  if (
+    data.selectedTopics.length < settings.minTopicSelections ||
+    data.selectedTopics.length > settings.maxTopicSelections
+  ) {
+    return validationError(
+      `请选择 ${settings.minTopicSelections}-${settings.maxTopicSelections} 个想聊的主题。`
+    );
+  }
+
+  if (
+    data.selectedTopics.some((topicId) => !enabledTopicIds.has(topicId)) ||
+    !enabledTopicIds.has(data.strongestTopic)
+  ) {
+    return validationError("提交内容里包含当前嘉宾问卷未启用的主题。");
+  }
+
   const contactInfoEncrypted = data.contactInfo ? encryptContactInfo(data.contactInfo) : null;
   const contactInfoHash = data.contactInfo ? hashContactInfo(data.contactInfo) : null;
+  const participantNickname = data.guestName.trim().replace(/\s+/g, " ");
+  const participantNormalizedNickname = normalizedNickname(participantNickname);
 
   try {
-    const existing = data.anonymousSessionId
-      ? await prisma.guestSurveyResponse.findFirst({
-          where: {
-            anonymousSessionId: data.anonymousSessionId,
-            createdAt: {
-              gte: new Date(Date.now() - 60 * 60 * 1000)
+    const created = await prisma.$transaction(async (tx) => {
+      const existing = data.anonymousSessionId
+        ? await tx.guestSurveyResponse.findFirst({
+            where: {
+              anonymousSessionId: data.anonymousSessionId,
+              createdAt: {
+                gte: new Date(Date.now() - 60 * 60 * 1000)
+              }
+            },
+            select: {
+              id: true
             }
-          },
-          select: {
-            id: true
-          }
-        })
-      : null;
+          })
+        : null;
 
-    if (existing) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: {
-            code: "DUPLICATE_SUBMISSION",
-            message: "这个浏览器刚刚已经提交过一次嘉宾问卷。"
-          }
-        },
-        { status: 409 }
-      );
-    }
-
-    const created = await prisma.guestSurveyResponse.create({
-      data: {
-        anonymousSessionId: data.anonymousSessionId,
-        guestName: data.guestName,
-        guestIdentity: data.guestIdentity,
-        organization: data.organization,
-        relationshipToTopics: data.relationshipToTopics,
-        selectedTopics: data.selectedTopics,
-        customTopics: data.customTopics,
-        strongestTopic: data.strongestTopic,
-        talkAngles: data.talkAngles,
-        keyStory: data.keyStory,
-        questionsWantToDiscuss: data.questionsWantToDiscuss,
-        boundaries: data.boundaries,
-        sensitiveTopics: data.sensitiveTopics,
-        preferredFormats: data.preferredFormats,
-        availability: data.availability,
-        preferredContactMethod: data.preferredContactMethod,
-        contactInfoEncrypted,
-        contactInfoHash,
-        consentToFollowUp: data.consentToFollowUp,
-        source: data.source,
-        referrer: data.referrer,
-        ipHash,
-        userAgentHash: hashValue(getRequestUserAgent(request))
+      if (existing) {
+        throw new Prisma.PrismaClientKnownRequestError("Duplicate submission", {
+          code: "P2002",
+          clientVersion: Prisma.prismaVersion.client
+        });
       }
+
+      const participant = await tx.participant.upsert({
+        where: {
+          normalizedNickname: participantNormalizedNickname
+        },
+        update: {
+          nickname: participantNickname
+        },
+        create: {
+          nickname: participantNickname,
+          normalizedNickname: participantNormalizedNickname
+        },
+        select: {
+          id: true
+        }
+      });
+
+      return tx.guestSurveyResponse.create({
+        data: {
+          participantId: participant.id,
+          anonymousSessionId: data.anonymousSessionId,
+          guestName: participantNickname,
+          guestIdentity: data.guestIdentity,
+          organization: data.organization,
+          relationshipToTopics: data.relationshipToTopics,
+          selectedTopics: data.selectedTopics,
+          customTopics: data.customTopics,
+          strongestTopic: data.strongestTopic,
+          talkAngles: data.talkAngles,
+          keyStory: data.keyStory,
+          questionsWantToDiscuss: data.questionsWantToDiscuss,
+          boundaries: data.boundaries,
+          sensitiveTopics: data.sensitiveTopics,
+          preferredFormats: data.preferredFormats,
+          availability: data.availability,
+          preferredContactMethod: data.preferredContactMethod,
+          contactInfoEncrypted,
+          contactInfoHash,
+          consentToFollowUp: data.consentToFollowUp,
+          source: data.source,
+          referrer: data.referrer,
+          ipHash,
+          userAgentHash: hashValue(getRequestUserAgent(request))
+        }
+      });
     });
 
     const topic = getTopicById(data.strongestTopic);
@@ -127,6 +190,19 @@ export async function POST(request: Request) {
         : null
     });
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: {
+            code: "DUPLICATE_SUBMISSION",
+            message: "这个浏览器刚刚已经提交过一次嘉宾问卷。"
+          }
+        },
+        { status: 409 }
+      );
+    }
+
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       return NextResponse.json(
         {

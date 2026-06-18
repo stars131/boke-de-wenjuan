@@ -40,7 +40,8 @@ const basePayload = {
   ],
   topPriorityTopic: "identity-unloading",
   privateButWantToHearTopic: "没有",
-  participationWillingness: []
+  participationWillingness: [],
+  nickname: "测试观众"
 };
 
 describe("submitSurveySchema", () => {
@@ -48,7 +49,7 @@ describe("submitSurveySchema", () => {
     expect(submitSurveySchema.safeParse(basePayload).success).toBe(true);
   });
 
-  it("rejects fewer than three topics", () => {
+  it("accepts structurally valid topic selections below the default UI minimum", () => {
     const result = submitSurveySchema.safeParse({
       ...basePayload,
       selectedTopics: ["identity-unloading"],
@@ -62,7 +63,7 @@ describe("submitSurveySchema", () => {
       ]
     });
 
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
   });
 
   it("requires story topic and usage when a story is provided", () => {
@@ -101,6 +102,7 @@ describe("submitGuestSurveySchema", () => {
 
   it("requires contact info when follow-up consent is enabled", () => {
     const result = submitGuestSurveySchema.safeParse({
+      guestName: "测试嘉宾",
       guestIdentity: "刚毕业 1-3 年",
       relationshipToTopics: [],
       selectedTopics: ["job-search-self-worth"],

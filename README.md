@@ -30,7 +30,9 @@ npx prisma migrate dev --name init
 npm run dev
 ```
 
-前台地址：`http://localhost:3000`
+问卷中心：`http://localhost:3000`
+
+观众问卷：`http://localhost:3000/survey`
 
 后台地址：`http://localhost:3000/admin`
 
@@ -75,6 +77,9 @@ npm run db:studio
 - 故事审核状态、标签、高价值、可采访线索标记。
 - CSV 导出，默认不包含联系方式；超级管理员可导出联系方式。
 - 嘉宾问卷入口，用于收集潜在嘉宾想聊主题、故事角度、边界和录制偏好。
+- 首页按身份分流：观众问卷、嘉宾问卷、管理员入口。
+- 观众和嘉宾提交按唯一昵称区分，并可在首页查询提交摘要。
+- 后台可配置观众/嘉宾两套问卷标题、说明、主题池、主题数量限制和选项内容。
 - 后台可查看并导出嘉宾问卷，联系方式同样加密保存。
 - Dockerfile、docker-compose、Nginx 示例配置。
 
@@ -97,6 +102,8 @@ docker compose -p university-podcast-survey exec app npx prisma migrate deploy
 - `components/survey/SurveyApp.tsx`：前台问卷主流程。
 - `components/admin/AdminApp.tsx`：后台管理界面。
 - `components/guest/GuestSurveyApp.tsx`：嘉宾沟通问卷。
+- `components/home/HomePortal.tsx`：首页身份分流和昵称查询。
+- `lib/questionnaire-config.ts`：观众/嘉宾问卷默认配置与配置归一化。
 - `lib/topics.ts`：25 个主题配置。
 - `lib/guest-options.ts`：嘉宾问卷选项配置。
 - `lib/validation.ts`：提交接口 Zod 校验。

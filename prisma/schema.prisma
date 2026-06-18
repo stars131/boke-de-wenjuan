@@ -7,10 +7,37 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Participant {
+  id                   String                @id @default(cuid())
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  nickname             String                @unique
+  normalizedNickname   String                @unique
+  surveyResponses      SurveyResponse[]
+  guestSurveyResponses GuestSurveyResponse[]
+
+  @@index([createdAt])
+}
+
+model QuestionnaireConfig {
+  key             String   @id
+  title           String
+  description     String   @db.Text
+  introBadge      String?
+  introText       String   @db.Text
+  ctaLabel        String?
+  enabledTopicIds String[]
+  settings        Json
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
 model SurveyResponse {
   id                         String        @id @default(cuid())
   createdAt                  DateTime      @default(now())
   updatedAt                  DateTime      @updatedAt
+  participantId              String?
+  participant                Participant?  @relation(fields: [participantId], references: [id], onDelete: SetNull)
   anonymousSessionId         String?
   identityStatus             String
   currentStates              String[]
@@ -38,9 +65,11 @@ model SurveyResponse {
 
   @@index([createdAt])
   @@index([anonymousSessionId])
+  @@index([participantId])
   @@index([topPriorityTopic])
   @@index([storyRelatedTopic])
   @@index([contactInfoHash])
+  @@index([nickname])
 }
 
 model TopicRating {
@@ -79,6 +108,8 @@ model GuestSurveyResponse {
   id                     String   @id @default(cuid())
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
+  participantId          String?
+  participant            Participant? @relation(fields: [participantId], references: [id], onDelete: SetNull)
   anonymousSessionId     String?
   guestName              String?
   guestIdentity          String
@@ -105,6 +136,8 @@ model GuestSurveyResponse {
 
   @@index([createdAt])
   @@index([anonymousSessionId])
+  @@index([participantId])
   @@index([strongestTopic])
   @@index([contactInfoHash])
+  @@index([guestName])
 }

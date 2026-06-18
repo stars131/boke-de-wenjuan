@@ -12,9 +12,30 @@ import {
 } from "@/lib/security";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { isPotentialGuestLead } from "@/lib/analytics";
+import {
+  normalizeQuestionnaireConfig,
+  type AudienceQuestionnaireSettings
+} from "@/lib/questionnaire-config";
 
 function zodErrorToFields(error: { issues: { path: (string | number)[]; message: string }[] }) {
   return Object.fromEntries(error.issues.map((issue) => [issue.path.join(".") || "form", issue.message]));
+}
+
+function normalizedNickname(nickname: string) {
+  return nickname.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function validationError(message: string) {
+  return NextResponse.json(
+    {
+      ok: false,
+      error: {
+        code: "VALIDATION_ERROR",
+        message
+      }
+    },
+    { status: 400 }
+  );
 }
 
 export async function POST(request: Request) {
@@ -69,9 +90,43 @@ export async function POST(request: Request) {
   }
 
   const data = parsed.data;
+  const questionnaireConfig = normalizeQuestionnaireConfig(
+    "audience",
+    await prisma.questionnaireConfig.findUnique({
+      where: {
+        key: "audience"
+      }
+    })
+  );
+  const settings = questionnaireConfig.settings as AudienceQuestionnaireSettings;
+  const enabledTopicIds = new Set(questionnaireConfig.enabledTopicIds);
+
+  if (
+    data.selectedTopics.length < settings.minTopicSelections ||
+    data.selectedTopics.length > settings.maxTopicSelections
+  ) {
+    return validationError(
+      `请选择 ${settings.minTopicSelections}-${settings.maxTopicSelections} 个主题。`
+    );
+  }
+
+  if (
+    data.selectedTopics.some((topicId) => !enabledTopicIds.has(topicId)) ||
+    data.topicRatings.some((rating) => !enabledTopicIds.has(rating.topicId)) ||
+    !enabledTopicIds.has(data.topPriorityTopic) ||
+    (data.privateButWantToHearTopic &&
+      data.privateButWantToHearTopic !== "没有" &&
+      !enabledTopicIds.has(data.privateButWantToHearTopic)) ||
+    (data.storyRelatedTopic && !enabledTopicIds.has(data.storyRelatedTopic))
+  ) {
+    return validationError("提交内容里包含当前问卷未启用的主题。");
+  }
+
   const userAgentHash = hashValue(getRequestUserAgent(request));
   const contactInfoEncrypted = data.contactInfo ? encryptContactInfo(data.contactInfo) : null;
   const contactInfoHash = data.contactInfo ? hashContactInfo(data.contactInfo) : null;
+  const participantNickname = data.nickname.trim().replace(/\s+/g, " ");
+  const participantNormalizedNickname = normalizedNickname(participantNickname);
 
   try {
     const response = await prisma.$transaction(async (tx) => {
@@ -96,8 +151,25 @@ export async function POST(request: Request) {
         });
       }
 
+      const participant = await tx.participant.upsert({
+        where: {
+          normalizedNickname: participantNormalizedNickname
+        },
+        update: {
+          nickname: participantNickname
+        },
+        create: {
+          nickname: participantNickname,
+          normalizedNickname: participantNormalizedNickname
+        },
+        select: {
+          id: true
+        }
+      });
+
       const created = await tx.surveyResponse.create({
         data: {
+          participantId: participant.id,
           anonymousSessionId: data.anonymousSessionId,
           identityStatus: data.identityStatus,
           currentStates: data.currentStates,
@@ -114,7 +186,7 @@ export async function POST(request: Request) {
           participationWillingness: data.participationWillingness,
           contactInfoEncrypted,
           contactInfoHash,
-          nickname: data.nickname,
+          nickname: participantNickname,
           additionalSuggestions: data.additionalSuggestions,
           source: data.source,
           referrer: data.referrer,

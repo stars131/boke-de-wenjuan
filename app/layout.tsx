@@ -2,12 +2,12 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "《大学生不必看》选题问卷",
-  description: "我们想聊一点大学里不总被认真讨论的事。匿名填写，帮助决定第一季选题。",
+  title: "《大学生不必看》问卷中心",
+  description: "选择观众、嘉宾或管理员身份，进入对应问卷或后台。",
   openGraph: {
-    title: "《大学生不必看》选题问卷",
+    title: "《大学生不必看》问卷中心",
     description:
-      "不是学习方法，不是成功经验，而是那些你可能经历过、困惑过、但很少有人认真聊的东西。",
+      "观众问卷和嘉宾问卷分开填写，并可通过唯一昵称查询提交记录。",
     type: "website"
   }
 };
